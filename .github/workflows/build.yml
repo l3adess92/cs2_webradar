@@ -1,0 +1,31 @@
+name: Build Windows App  # 👈 Nom qui s'affiche dans GitHub
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Get Code
+      uses: actions/checkout@v4
+      
+    - name: Setup Windows Build
+      uses: microsoft/setup-msbuild@v1
+      
+    - name: Compile Project
+      run: |
+        cd usermode
+        msbuild cs2_webradar.sln /p:Configuration=Release
+        
+    - name: Prepare Files
+      run: |
+        copy "usermode\x64\Release\cs2_webradar.exe" "windows_app.exe"
+        7z a app_package.zip windows_app.exe webapp/
+        
+    - name: Share Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-app  # 👈 Nom du ZIP téléchargé
+        path: app_package.zip
