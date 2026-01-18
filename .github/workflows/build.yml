@@ -8,147 +8,64 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    # ÉTAPE 1: Télécharger le code
-    - name: 📥 Download Code
+    - name: 📥 Download
       uses: actions/checkout@v4
       
-    # ÉTAPE 2: Explorer pour comprendre la structure
-    - name: 🔍 Debug - Show Structure
+    - name: 🔍 DEBUG - Show Actual Structure
       shell: cmd
       run: |
-        echo === DEBUG: SHOWING ALL FILES ===
-        dir /s /b
+        echo ACTUAL PATH: %CD%
         echo.
-        echo === DEBUG: LOOKING FOR .SLN FILES ===
-        dir *.sln /s /b
-        
-    # ÉTAPE 3: Compiler AVANT de chercher le .exe
-    - name: 🔨 Compile Project
+        echo ALL FILES:
+        dir
+        echo.
+        echo SUBFOLDERS:
+        if exist cs2_webradar (
+          cd cs2_webradar
+          dir
+          cd ..
+        )
+      
+    - name: 🔨 Compile from CORRECT PATH
       shell: cmd
       run: |
-        echo === COMPILATION START ===
-        
-        # Essayer différents chemins
+        # LE CHEMIN EST: cs2_webradar\cs2_webradar\
         if exist "cs2_webradar\cs2_webradar.sln" (
-            echo "Found solution in cs2_webradar\cs2_webradar.sln"
-            cd cs2_webradar
-            msbuild cs2_webradar.sln /p:Configuration=Release
-        ) else if exist "usermode\cs2_webradar.sln" (
-            echo "Found solution in usermode\cs2_webradar.sln"
-            cd usermode
-            msbuild cs2_webradar.sln /p:Configuration=Release
+          echo "Compiling from cs2_webradar\"
+          cd cs2_webradar
+        )
+        
+        msbuild usermode\cs2_webradar.sln /p:Configuration=Release /p:Platform=x64
+        
+    - name: 📄 Copy EXE from CORRECT LOCATION
+      shell: cmd
+      run: |
+        # LE .exe EST ICI: cs2_webradar\cs2_webradar\usermode\x64\Release\
+        if exist "cs2_webradar\usermode\x64\Release\cs2_webradar.exe" (
+          echo "Copying from cs2_webradar\usermode\..."
+          copy "cs2_webradar\usermode\x64\Release\cs2_webradar.exe" "windows_app.exe"
+        ) else if exist "usermode\x64\Release\cs2_webradar.exe" (
+          echo "Copying from usermode\..."
+          copy "usermode\x64\Release\cs2_webradar.exe" "windows_app.exe"
         ) else (
-            echo "ERROR: No .sln file found!"
-            dir *.sln /s /b
-            exit 1
+          echo "ERROR: .exe not found! Searching..."
+          dir *.exe /s /b
+          exit 1
         )
         
-    # ÉTAPE 4: CHERCHER LE .exe APRÈS compilation (méthode intelligente)
-    - name: 🔎 Find Generated Executable
+        echo "✅ windows_app.exe created"
+      
+    - name: 📦 Create ZIP
       shell: cmd
       run: |
-        echo === SEARCHING FOR .EXE ===
-        
-        # Option 1: Chercher récursivement
-        for /r %%i in (cs2_webradar.exe) do (
-            echo "Found: %%i"
-            copy "%%i" "radar_final.exe"
-            goto :exe_found
+        # Copier webapp depuis le BON chemin
+        if exist "cs2_webradar\webapp" (
+          xcopy "cs2_webradar\webapp" "webapp" /E /I
         )
         
-        # Option 2: Chercher dans les dossiers Release
-        if exist "x64\Release\cs2_webradar.exe" (
-            copy "x64\Release\cs2_webradar.exe" "radar_final.exe"
-            goto :exe_found
-        )
+        "C:\Program Files\7-Zip\7z.exe" a final.zip windows_app.exe webapp
         
-        if exist "Release\cs2_webradar.exe" (
-            copy "Release\cs2_webradar.exe" "radar_final.exe"
-            goto :exe_found
-        )
-        
-        # Option 3: Chercher n'importe quel .exe récent
-        echo "Looking for ANY .exe file..."
-        for /r %%i in (*.exe) do (
-            echo "Possible: %%i"
-            copy "%%i" "radar_final.exe"
-            goto :exe_found
-        )
-        
-        echo "❌ ERROR: No .exe file found after compilation!"
-        echo "Debug: Listing all .exe files..."
-        dir *.exe /s /b
-        exit 1
-        
-        :exe_found
-        echo "✅ EXE COPIED: radar_final.exe"
-        
-    # ÉTAPE 5: Préparer webapp SANS npm install (on le fera plus tard)
-    - name: 🌐 Copy WebApp
-      shell: cmd
-      run: |
-        echo === COPYING WEBAPP ===
-        
-        if exist "..\webapp" (
-            xcopy "..\webapp" "webapp" /E /I /Y
-            echo "Webapp copied from parent"
-        ) else if exist "webapp" (
-            echo "Webapp already here"
-        ) else if exist "..\..\webapp" (
-            xcopy "..\..\webapp" "webapp" /E /I /Y
-            echo "Webapp copied from grandparent"
-        ) else (
-            echo "⚠️  Webapp not found"
-        )
-        
-    # ÉTAPE 6: Créer ZIP SANS se baser sur des chemins fixes
-    - name: 📦 Create Final Package
-      shell: cmd
-      run: |
-        echo === CREATING FINAL PACKAGE ===
-        
-        mkdir FINAL_PACKAGE
-        
-        # Copier l'exe si trouvé
-        if exist "radar_final.exe" (
-            copy "radar_final.exe" "FINAL_PACKAGE\usermode.exe"
-            echo "✅ Added usermode.exe"
-        )
-        
-        # Copier webapp si trouvé
-        if exist "webapp" (
-            xcopy "webapp" "FINAL_PACKAGE\webapp" /E /I /Y
-            echo "✅ Added webapp"
-        )
-        
-        # Créer un script de lancement simple
-        echo @echo off > "FINAL_PACKAGE\START.bat"
-        echo echo CS2 Radar >> "FINAL_PACKAGE\START.bat"
-        echo cd /d "%%~dp0" >> "FINAL_PACKAGE\START.bat"
-        echo if exist "usermode.exe" ( >> "FINAL_PACKAGE\START.bat"
-        echo   echo Starting usermode.exe >> "FINAL_PACKAGE\START.bat"
-        echo   start usermode.exe >> "FINAL_PACKAGE\START.bat"
-        echo ) >> "FINAL_PACKAGE\START.bat"
-        echo if exist "webapp" ( >> "FINAL_PACKAGE\START.bat"
-        echo   cd webapp >> "FINAL_PACKAGE\START.bat"
-        echo   echo Starting web server... >> "FINAL_PACKAGE\START.bat"
-        echo   start /b npm start >> "FINAL_PACKAGE\START.bat"
-        echo   cd .. >> "FINAL_PACKAGE\START.bat"
-        echo ) >> "FINAL_PACKAGE\START.bat"
-        echo timeout /t 3 >> "FINAL_PACKAGE\START.bat"
-        echo start http://localhost:5173 >> "FINAL_PACKAGE\START.bat"
-        echo pause >> "FINAL_PACKAGE\START.bat"
-        echo "✅ Added START.bat"
-        
-        # ZIP
-        "C:\Program Files\7-Zip\7z.exe" a final_package.zip FINAL_PACKAGE\*
-        
-        echo.
-        echo "✅ PACKAGE CREATED: final_package.zip"
-        
-    # ÉTAPE 7: Upload
-    - name: ⬆️ Upload Result
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: cs2-radar-package
-        path: final_package.zip
+        name: cs2-radar
+        path: final.zip
