@@ -1,309 +1,130 @@
-name: 🚀 Build Windows Application
+name: 🚀 BUILD CS2 RADAR
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 jobs:
   build:
     runs-on: windows-latest
     
     steps:
-    # ÉTAPE 1: Télécharger le code
-    - name: 📥 Download Source Code
-      uses: actions/checkout@v4
-      with:
-        path: source-code  # 👈 TOUT va dans ce dossier
+    # ÉTAPE 1: Télécharger
+    - uses: actions/checkout@v4
     
-    # ÉTAPE 2: Configurer Visual Studio
-    - name: ⚙️ Setup Visual Studio 2022
-      uses: microsoft/setup-msbuild@v1.3
-      
-    # ÉTAPE 3: Explorer la structure
-    - name: 🔍 Explore Project Structure
-      shell: pwsh
+    # ÉTAPE 2: Explorer
+    - name: 🔍 EXPLORE STRUCTURE
+      shell: cmd
       run: |
-        Write-Host "=== CURRENT DIRECTORY ==="
-        Get-Location
+        echo === STRUCTURE COMPLÈTE ===
+        dir /s
         
-        Write-Host "`n=== ALL FILES AND FOLDERS ==="
-        Get-ChildItem -Recurse | % { Write-Host "  $($_.FullName)" }
+        echo === TROUVER .SLN ===
+        dir *.sln /s
         
-        Write-Host "`n=== LOOKING FOR .SLN FILES ==="
-        $slnFiles = Get-ChildItem -Recurse -Filter *.sln
-        if ($slnFiles.Count -eq 0) {
-            Write-Host "❌ No .sln files found!"
-        } else {
-            foreach ($sln in $slnFiles) {
-                Write-Host "✅ Found: $($sln.FullName)"
-            }
-        }
+        echo === TROUVER .EXE ===  
+        dir *.exe /s
         
-    # ÉTAPE 4: Trouver le bon chemin
-    - name: 🗺️ Find Correct Build Path
-      shell: pwsh
-      id: find_path
+    # ÉTAPE 3: Compiler SIMPLEMENT
+    - name: 🔨 COMPILER
+      shell: cmd
       run: |
-        # Chercher le dossier usermode
-        $possiblePaths = @(
-            "source-code/usermode",
-            "source-code/cs2_webradar/usermode", 
-            "usermode",
-            "source-code/cs2_webradar-main/usermode"
+        # Aller dans le bon dossier
+        if exist "cs2_webradar\cs2_webradar.sln" (
+            cd cs2_webradar
+            echo Compiling from main folder...
         )
         
-        foreach ($path in $possiblePaths) {
-            if (Test-Path $path) {
-                Write-Host "✅ Found usermode at: $path"
-                Write-Host "::set-output name=usermode_path::$path"
-                
-                # Vérifier si .sln existe
-                $slnPath = Join-Path $path "cs2_webradar.sln"
-                if (Test-Path $slnPath) {
-                    Write-Host "✅ .sln exists at: $slnPath"
-                    Write-Host "::set-output name=sln_path::$slnPath"
-                }
-                break
-            }
-        }
-        
-    # ÉTAPE 5: Compiler le projet
-    - name: 🔨 Compile Project
-      shell: pwsh
-      run: |
-        $usermodePath = "${{ steps.find_path.outputs.usermode_path }}"
-        $slnPath = "${{ steps.find_path.outputs.sln_path }}"
-        
-        Write-Host "Building from: $usermodePath"
-        Write-Host "Solution file: $slnPath"
-        
-        if (-not $slnPath) {
-            # Chercher .sln manuellement
-            $slnPath = Get-ChildItem -Recurse -Filter *.sln -Path $usermodePath | Select-Object -First 1
-            if ($slnPath) {
-                Write-Host "Found .sln: $($slnPath.FullName)"
-                $slnPath = $slnPath.FullName
-            }
-        }
-        
-        if ($slnPath) {
-            # Compiler avec MSBuild
-            Write-Host "`n=== COMPILING WITH MSBUILD ==="
-            msbuild "$slnPath" /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
-            
-            # Chercher le .exe généré
-            $exeFiles = Get-ChildItem -Recurse -Filter *.exe -Path $usermodePath
-            Write-Host "`nFound $($exeFiles.Count) .exe files:"
-            foreach ($exe in $exeFiles) {
-                Write-Host "  - $($exe.FullName) ($($exe.Length / 1MB) MB)"
-            }
-        } else {
-            Write-Host "❌ No .sln file found for compilation!"
-            exit 1
-        }
-        
-    # ÉTAPE 6: Chercher et copier l'exécutable
-    - name: 📄 Find and Copy Executable
-      shell: pwsh
-      run: |
-        $usermodePath = "${{ steps.find_path.outputs.usermode_path }}"
-        
-        Write-Host "`n=== SEARCHING FOR .EXE FILES ==="
-        
-        # Chercher tous les .exe
-        $allExeFiles = Get-ChildItem -Recurse -Filter *.exe -Path $usermodePath
-        
-        if ($allExeFiles.Count -eq 0) {
-            Write-Host "❌ No .exe files found!"
-            Write-Host "`n=== BUILD FAILED - CHECKING FOR ERRORS ==="
-            
-            # Chercher des fichiers de log d'erreur
-            $logFiles = Get-ChildItem -Recurse -Filter *.log -Path $usermodePath
-            foreach ($log in $logFiles) {
-                Write-Host "`nLog file: $($log.FullName)"
-                Get-Content $log.FullName -Tail 20
-            }
-            
-            exit 1
-        }
-        
-        # Prendre le plus gros .exe (probablement le bon)
-        $mainExe = $allExeFiles | Sort-Object Length -Descending | Select-Object -First 1
-        
-        Write-Host "✅ Selected executable:"
-        Write-Host "  Name: $($mainExe.Name)"
-        Write-Host "  Path: $($mainExe.FullName)"
-        Write-Host "  Size: $([math]::Round($mainExe.Length / 1MB, 2)) MB"
-        Write-Host "  Date: $($mainExe.CreationTime)"
-        
-        # Copier vers le dossier racine
-        Copy-Item $mainExe.FullName "windows_app.exe" -Force
-        
-        # Vérifier la copie
-        if (Test-Path "windows_app.exe") {
-            $copiedFile = Get-Item "windows_app.exe"
-            Write-Host "`n✅ SUCCESS: windows_app.exe created"
-            Write-Host "  Size: $([math]::Round($copiedFile.Length / 1MB, 2)) MB"
-        } else {
-            Write-Host "❌ ERROR: Failed to copy executable"
-            exit 1
-        }
-        
-    # ÉTAPE 7: Préparer les fichiers web
-    - name: 🌐 Prepare Web Application
-      shell: pwsh
-      run: |
-        Write-Host "`n=== PREPARING WEB APP ==="
-        
-        # Chercher le dossier webapp
-        $webappPaths = @(
-            "source-code/webapp",
-            "source-code/cs2_webradar/webapp",
-            "webapp",
-            "source-code/cs2_webradar-main/webapp"
+        # Compiler
+        if exist "usermode\cs2_webradar.sln" (
+            cd usermode
+            echo Compiling usermode...
+            msbuild cs2_webradar.sln /p:Configuration=Release
         )
         
-        $webappFound = $false
-        foreach ($path in $webappPaths) {
-            if (Test-Path $path) {
-                Write-Host "✅ Found webapp at: $path"
-                
-                # Copier le dossier webapp
-                Copy-Item $path "webapp" -Recurse -Force
-                $webappFound = $true
-                
-                # Installer les dépendances
-                Write-Host "Installing npm dependencies..."
-                cd webapp
-                npm ci --silent
-                cd ..
-                
-                break
-            }
-        }
-        
-        if (-not $webappFound) {
-            Write-Host "⚠️  Webapp not found, but continuing..."
-        }
-        
-    # ÉTAPE 8: Créer le package final
-    - name: 📦 Create Final Package
-      shell: pwsh
+    # ÉTAPE 4: CHERCHER L'EXE PARTOUT
+    - name: 🔎 FIND EXECUTABLE
+      shell: cmd
       run: |
-        Write-Host "`n=== CREATING FINAL PACKAGE ==="
+        echo === RECHERCHE .EXE ===
         
-        # Créer dossier de distribution
-        New-Item -ItemType Directory -Path "CS2_Radar_Package" -Force
+        :: Chercher dans tous les dossiers
+        for /r %%i in (*.exe) do (
+            echo FOUND: %%i
+            copy "%%i" "radar_app.exe"
+            goto :found
+        )
         
-        # Copier les fichiers
-        if (Test-Path "windows_app.exe") {
-            Copy-Item "windows_app.exe" "CS2_Radar_Package/usermode.exe" -Force
-            Write-Host "✅ Added: usermode.exe"
-        }
+        :: Si pas trouvé, essayer chemins connus
+        if exist "cs2_webradar\usermode\x64\Release\cs2_webradar.exe" (
+            copy "cs2_webradar\usermode\x64\Release\cs2_webradar.exe" "radar_app.exe"
+        ) else if exist "usermode\x64\Release\cs2_webradar.exe" (
+            copy "usermode\x64\Release\cs2_webradar.exe" "radar_app.exe"
+        ) else if exist "cs2_webradar\cs2_webradar\usermode\x64\Release\cs2_webradar.exe" (
+            copy "cs2_webradar\cs2_webradar\usermode\x64\Release\cs2_webradar.exe" "radar_app.exe"
+        ) else (
+            echo ❌ AUCUN .EXE TROUVE
+            exit 1
+        )
         
-        if (Test-Path "webapp") {
-            Copy-Item "webapp" "CS2_Radar_Package/webapp" -Recurse -Force
-            Write-Host "✅ Added: webapp folder"
-        }
+        :found
+        echo ✅ EXE COPIE: radar_app.exe
         
-        # Créer le script de lancement
-        $launchScript = @'
-@echo off
-chcp 65001 >nul
-echo ========================================
-echo        CS2 Web Radar Launcher
-echo        Educational Use Only
-echo ========================================
-echo.
-echo [1/3] Starting web server...
-cd /d "%~dp0webapp"
-start "Web Server" cmd /c "npm start"
-timeout /t 5 /nobreak >nul
-
-echo [2/3] Starting radar...
-cd /d "%~dp0"
-if exist "usermode.exe" (
-    start "Radar" usermode.exe
-) else (
-    echo ERROR: usermode.exe not found!
-)
-
-echo [3/3] Opening browser...
-start http://localhost:5173
-echo.
-echo ========================================
-echo INSTRUCTIONS:
-echo 1. Launch CS2 with: -insecure -novid
-echo 2. Add bots: bot_add ct, bot_add t
-echo 3. Radar will appear in browser
-echo ========================================
-echo.
-pause
-'@
+    # ÉTAPE 5: PRÉPARER WEBAPP
+    - name: 🌐 PREPARE WEB
+      shell: cmd
+      run: |
+        if exist "cs2_webradar\webapp" (
+            xcopy "cs2_webradar\webapp" "webapp" /E /I
+        ) else if exist "webapp" (
+            echo Webapp deja present
+        )
         
-        $launchScript | Out-File -FilePath "CS2_Radar_Package/START.bat" -Encoding ASCII
-        Write-Host "✅ Added: START.bat launcher"
+        if exist "webapp" (
+            cd webapp
+            call npm install --silent
+        )
         
-        # Créer README
-        $readme = @'
-# CS2 Web Radar Package
-
-## Contents:
-- usermode.exe - Memory reader application
-- webapp/ - Web interface (localhost:5173)
-- START.bat - Launch everything automatically
-
-## Usage:
-1. Run START.bat
-2. Launch Counter-Strike 2 with these launch options:
-   -insecure -novid +sv_cheats 1 +map de_dust2
-3. In CS2 console (~), type: bot_add ct, bot_add t
-4. Open browser to: http://localhost:5173
-
-## Important:
-- ONLY use with -insecure parameter
-- For educational/testing purposes only
-- May trigger antivirus (false positive)
-'@
+    # ÉTAPE 6: CRÉER PACKAGE
+    - name: 📦 CREATE PACKAGE
+      shell: cmd
+      run: |
+        echo === CRÉATION PACKAGE ===
         
-        $readme | Out-File -FilePath "CS2_Radar_Package/README.txt" -Encoding ASCII
-        Write-Host "✅ Added: README.txt"
+        mkdir CS2_RADAR_FINAL
         
-        # Créer le ZIP
-        Write-Host "`nCreating ZIP package..."
-        7z a -tzip "CS2_Radar_Complete.zip" "CS2_Radar_Package\*"
+        :: Copier exe
+        if exist "radar_app.exe" (
+            copy "radar_app.exe" "CS2_RADAR_FINAL\usermode.exe"
+            echo ✅ usermode.exe
+        )
         
-        $zipSize = (Get-Item "CS2_Radar_Complete.zip").Length / 1MB
-        Write-Host "✅ Package created: CS2_Radar_Complete.zip ($([math]::Round($zipSize, 2)) MB)"
+        :: Copier webapp
+        if exist "webapp" (
+            xcopy "webapp" "CS2_RADAR_FINAL\webapp" /E /I
+            echo ✅ webapp
+        )
         
-    # ÉTAPE 9: Téléverser les artefacts
-    - name: ⬆️ Upload Build Artifacts
-      uses: actions/upload-artifact@v4
+        :: Créer START.bat
+        echo @echo off > "CS2_RADAR_FINAL\START.bat"
+        echo echo Launching CS2 Radar... >> "CS2_RADAR_FINAL\START.bat"
+        echo cd /d "%%~dp0webapp" >> "CS2_RADAR_FINAL\START.bat"
+        echo start "Web" npm start >> "CS2_RADAR_FINAL\START.bat"
+        echo timeout /t 3 >> "CS2_RADAR_FINAL\START.bat"
+        echo cd .. >> "CS2_RADAR_FINAL\START.bat"
+        echo start "Radar" usermode.exe >> "CS2_RADAR_FINAL\START.bat"
+        echo start http://localhost:5173 >> "CS2_RADAR_FINAL\START.bat"
+        echo echo ✅ Ready! Launch CS2 with -insecure >> "CS2_RADAR_FINAL\START.bat"
+        echo pause >> "CS2_RADAR_FINAL\START.bat"
+        echo ✅ START.bat
+        
+        :: ZIP
+        "C:\Program Files\7-Zip\7z.exe" a -tzip CS2_RADAR.zip CS2_RADAR_FINAL\*
+        
+        echo.
+        echo ✅ PACKAGE CREATED: CS2_RADAR.zip
+        
+    # ÉTAPE 7: UPLOAD
+    - uses: actions/upload-artifact@v4
       with:
-        name: CS2-Radar-Complete-Package
-        path: |
-          CS2_Radar_Complete.zip
-          windows_app.exe
-        retention-days: 7
-        
-    # ÉTAPE 10: Rapport de succès
-    - name: 🎉 Build Success
-      if: success()
-      shell: pwsh
-      run: |
-        Write-Host "`n"
-        Write-Host "############################################"
-        Write-Host "#                                          #"
-        Write-Host "#     🎉 BUILD SUCCESSFULLY COMPLETED     #"
-        Write-Host "#                                          #"
-        Write-Host "############################################"
-        Write-Host "`n"
-        Write-Host "📦 Artifact: CS2-Radar-Complete-Package"
-        Write-Host "📁 Contains: usermode.exe + webapp + launcher"
-        Write-Host "⏱️  Status: Ready for download"
-        Write-Host "`nNext steps:"
-        Write-Host "1. Download the artifact"
-        Write-Host "2. Extract to C:\CS2_Radar\"
-        Write-Host "3. Run START.bat"
-        Write-Host "4. Launch CS2 with -insecure flag"
+        name: CS2-RADAR-PACKAGE
+        path: CS2_RADAR.zip
